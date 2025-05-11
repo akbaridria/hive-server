@@ -6,6 +6,7 @@ export interface Order {
   price: string;
   amount: string;
   filled: string;
+  remainingAmount: string;
   orderType: OrderType;
   active: boolean;
   timestamp: number;

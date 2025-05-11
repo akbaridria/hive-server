@@ -3,6 +3,24 @@ import { Request, Response } from "express";
 export default class OrderBookController {
   constructor(private factoryListener: any) {}
 
+  getUserOrders = (req: Request, res: Response) => {
+    try {
+      const poolAddress = req.params.address;
+      const traderAddress = req.params.trader;
+      const listener = this.factoryListener.getTraderListener(poolAddress);
+      if (!listener) {
+        return res.status(404).json({ error: "Trader not found" });
+      }
+      const orders = listener.getOrders(traderAddress);
+      if (!orders) {
+        return res.status(404).json({ error: "No orders found" });
+      }
+      res.json(orders);
+    } catch (error) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
   getOrderBook = (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;

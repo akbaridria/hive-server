@@ -12,6 +12,7 @@ export default function routes(factoryListener: any) {
   router.get("/pools/:address", poolController.getPoolInfo);
   router.get("/pools/:address/orderbook", orderBookController.getOrderBook);
   router.get("/pools/:address/orders/:id", orderBookController.getOrder);
+  router.get("/pools/:address/:trader/orders", orderBookController.getUserOrders);
 
   return router;
 }

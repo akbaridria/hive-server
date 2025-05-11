@@ -496,6 +496,12 @@
                 "internalType": "address"
             },
             {
+                "name": "orderId",
+                "type": "uint256",
+                "indexed": true,
+                "internalType": "uint256"
+            },
+            {
                 "name": "price",
                 "type": "uint256",
                 "indexed": false,

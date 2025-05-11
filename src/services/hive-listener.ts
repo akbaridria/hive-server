@@ -1,8 +1,9 @@
 import { ethers } from "ethers";
 import OrderBookModel from "../models/order-book";
-import * as HiveCoreABI from "../../abis/hive-core.json";
+import HiveCoreABI from "../../abis/hive-core.json";
+import Erc20ABI from "../../abis/erc20.json";
 import logger from "../utils/logger";
-import { PoolInfo } from "../models/types";
+import { Order, PoolInfo } from "../models/types";
 
 interface HiveListenerEvents {
   onOrderBookUpdate: (poolAddress: string) => void;
@@ -11,18 +12,22 @@ interface HiveListenerEvents {
 export default class HiveListener {
   private contract: ethers.Contract;
   private orderBook: OrderBookModel;
-  private lastProcessedBlock: number = 0;
-  private isSyncing: boolean = false;
   private events: HiveListenerEvents;
+  private baseTokenDecimals: number;
+  private quoteTokenDecimals: number;
 
   constructor(
     provider: ethers.providers.JsonRpcProvider,
     contractAddress: string,
-    events: HiveListenerEvents
+    events: HiveListenerEvents,
+    baseTokenDecimals: number = 18,
+    quoteTokenDecimals: number = 18
   ) {
     this.contract = new ethers.Contract(contractAddress, HiveCoreABI, provider);
     this.events = events;
     this.orderBook = new OrderBookModel("", "");
+    this.baseTokenDecimals = baseTokenDecimals;
+    this.quoteTokenDecimals = quoteTokenDecimals;
   }
 
   async initialize(): Promise<void> {
@@ -33,8 +38,27 @@ export default class HiveListener {
         this.contract.getLatestPrice(),
       ]);
 
-      this.orderBook = new OrderBookModel(baseToken, quoteToken);
-      this.orderBook.setLatestPrice(latestPrice.toString());
+      const baseTokenContract = new ethers.Contract(
+        baseToken,
+        Erc20ABI,
+        this.contract.provider
+      );
+      const quoteTokenContract = new ethers.Contract(
+        quoteToken,
+        Erc20ABI,
+        this.contract.provider
+      );
+      this.baseTokenDecimals = await baseTokenContract.decimals();
+      this.quoteTokenDecimals = await quoteTokenContract.decimals();
+
+      this.orderBook = new OrderBookModel(
+        baseToken,
+        quoteToken,
+        this.contract.address
+      );
+      this.orderBook.setLatestPrice(
+        String(Number(latestPrice) / 10 ** this.quoteTokenDecimals)
+      );
 
       logger.info(`Initialized HiveListener for pool ${this.contract.address}`);
     } catch (error) {
@@ -46,81 +70,11 @@ export default class HiveListener {
     }
   }
 
-  private async processEvent(event: ethers.Event): Promise<void> {
-    try {
-      const parsedLog = this.contract.interface.parseLog(event);
-
-      switch (parsedLog.name) {
-        case "OrderCreated":
-          await this.handleOrderCreated(parsedLog.args, event);
-          break;
-        case "OrderFilled":
-          await this.handleOrderFilled(parsedLog.args);
-          break;
-        case "OrderCancelled":
-          await this.handleOrderCancelled(parsedLog.args);
-          break;
-        case "OrderUpdated":
-          await this.handleOrderUpdated(parsedLog.args);
-          break;
-        case "TradeExecuted":
-          await this.handleTradeExecuted(parsedLog.args);
-          break;
-      }
-    } catch (error) {
-      logger.error(`Error processing event: ${event.transactionHash}`, error);
-    }
-  }
-
-  private async handleOrderCreated(
-    args: any,
-    event: ethers.Event
-  ): Promise<void> {
-    const orderId =
-      args.orderId?.toString() || (await this.findOrderIdFromEvent(event));
-    const block = await event.getBlock();
-
-    this.orderBook.addOrder({
-      id: orderId,
-      trader: args.trader,
-      price: args.price.toString(),
-      amount: args.amount.toString(),
-      filled: "0",
-      orderType: args.orderType === 0 ? "BUY" : "SELL",
-      active: true,
-      timestamp: block.timestamp,
-    });
-  }
-
-  private async handleOrderFilled(args: any): Promise<void> {
-    this.orderBook.updateOrder(
-      args.orderId.toString(),
-      args.originalAmount.toString(),
-      args.filledAmount.toString()
-    );
-  }
-
-  private async handleOrderCancelled(args: any): Promise<void> {
-    this.orderBook.removeOrder(args.orderId.toString());
-  }
-
-  private async handleOrderUpdated(args: any): Promise<void> {
-    this.orderBook.updateOrder(
-      args.orderId.toString(),
-      args.newAmount.toString()
-    );
-  }
-
-  private async handleTradeExecuted(args: any): Promise<void> {
-    this.orderBook.setLatestPrice(args.price.toString());
-  }
-
   async start(): Promise<void> {
     try {
       await this.initialize();
-      await this.syncState();
+      console.log(this.contract.address, "Starting HiveListener");
       this.setupListeners();
-      setInterval(() => this.syncState(), 60000);
       logger.info(`Started HiveListener for ${this.contract.address}`);
     } catch (error) {
       logger.error(
@@ -130,68 +84,39 @@ export default class HiveListener {
     }
   }
 
-  private async syncState(fromBlock?: number): Promise<void> {
-    if (this.isSyncing) return;
-
-    try {
-      this.isSyncing = true;
-      const latestBlock = await this.contract.provider.getBlockNumber();
-      const startBlock = fromBlock || this.lastProcessedBlock + 1;
-
-      if (startBlock > latestBlock) {
-        return;
-      }
-
-      // Process events in batches to avoid timeout
-      const batchSize = 2000;
-      let currentBlock = startBlock;
-
-      while (currentBlock <= latestBlock) {
-        const endBlock = Math.min(currentBlock + batchSize - 1, latestBlock);
-
-        const events = await this.contract.queryFilter(
-          {},
-          currentBlock,
-          endBlock
-        );
-        for (const event of events) {
-          await this.processEvent(event);
-        }
-
-        currentBlock = endBlock + 1;
-        this.lastProcessedBlock = endBlock;
-      }
-
-      logger.debug(
-        `Synced state for ${this.contract.address} from block ${startBlock} to ${latestBlock}`
-      );
-    } catch (error) {
-      logger.error(`Error syncing state for ${this.contract.address}:`, error);
-    } finally {
-      this.isSyncing = false;
-    }
-  }
-
   private setupListeners(): void {
     this.contract.on(
       "OrderCreated",
-      async (trader, price, amount, orderType, event) => {
+      (
+        trader: string,
+        orderId: bigint,
+        price: bigint,
+        amount: bigint,
+        orderType: bigint
+      ) => {
         try {
-          const orderId = await this.findOrderIdFromEvent(event);
-          const order = await this.contract.getOrder(orderId);
-
+          logger.info(
+            `OrderCreated event: ${trader}, ${orderId}, ${price}, ${amount}, ${orderType}`
+          );
           this.orderBook.addOrder({
             id: orderId.toString(),
             trader,
-            price: price.toString(),
-            amount: amount.toString(),
+            price: (Number(price) / 10 ** this.quoteTokenDecimals).toString(),
+            amount: (Number(amount) / 10 ** this.baseTokenDecimals).toString(),
+            remainingAmount: (
+              Number(amount) /
+              10 ** this.baseTokenDecimals
+            ).toString(),
             filled: "0",
-            orderType: orderType === 0 ? "BUY" : "SELL",
+            orderType: Number(orderType) === 0 ? "BUY" : "SELL",
             active: true,
-            timestamp: (await event.getBlock()).timestamp,
+            timestamp: Math.floor(Date.now() / 1000),
           });
 
           this.emitUpdate();
+          logger.info(
+            `OrderCreated: ${orderId.toString()} by ${trader} at price ${price} with amount ${amount}`
+          );
         } catch (error) {
           logger.error("Error processing OrderCreated event:", error);
         }
@@ -201,19 +126,21 @@ export default class HiveListener {
     this.contract.on(
       "OrderFilled",
       async (
-        orderId,
-        trader,
-        originalAmount,
-        filledAmount,
-        remainingAmount,
-        orderType,
+        orderId: bigint,
+        trader: string,
+        originalAmount: bigint,
+        filledAmount: bigint,
+        remainingAmount: bigint,
+        orderType: bigint,
         event
       ) => {
         try {
-          this.orderBook.updateOrder(
+          this.orderBook.updateOrderFilled(
             orderId.toString(),
-            originalAmount.toString(),
-            filledAmount.toString()
+            (Number(filledAmount) / 10 ** this.baseTokenDecimals).toString(),
+            (Number(remainingAmount) / 10 ** this.baseTokenDecimals).toString(),
+            trader,
+            Number(remainingAmount) > 0
           );
           this.emitUpdate();
         } catch (error) {
@@ -231,18 +158,27 @@ export default class HiveListener {
       }
     });
 
-    this.contract.on("OrderUpdated", (orderId, newAmount) => {
-      try {
-        this.orderBook.updateOrder(orderId.toString(), newAmount.toString());
-        this.emitUpdate();
-      } catch (error) {
-        logger.error("Error processing OrderUpdated event:", error);
+    this.contract.on(
+      "OrderUpdated",
+      (orderId: bigint, trader: string, newAmount: bigint) => {
+        try {
+          this.orderBook.updateOrder(
+            orderId.toString(),
+            (Number(newAmount) / 10 ** this.baseTokenDecimals).toString(),
+            trader
+          );
+          this.emitUpdate();
+        } catch (error) {
+          logger.error("Error processing OrderUpdated event:", error);
+        }
       }
-    });
+    );
 
     this.contract.on("TradeExecuted", (buyer, seller, amount, price) => {
       try {
-        this.orderBook.setLatestPrice(price.toString());
+        this.orderBook.setLatestPrice(
+          (Number(price) / 10 ** this.quoteTokenDecimals).toString()
+        );
         this.emitUpdate();
       } catch (error) {
         logger.error("Error processing TradeExecuted event:", error);
@@ -254,31 +190,15 @@ export default class HiveListener {
     this.events.onOrderBookUpdate(this.contract.address);
   }
 
-  private async findOrderIdFromEvent(event: ethers.Event): Promise<number> {
-    // Implement logic to extract order ID from event logs
-    // This is a placeholder - adjust based on your contract's event structure
-    const txReceipt = await event.getTransactionReceipt();
-    const iface = new ethers.utils.Interface(HiveCoreABI);
-
-    for (const log of txReceipt.logs) {
-      try {
-        const parsedLog = iface.parseLog(log);
-        if (parsedLog.name === "OrderCreated") {
-          return parsedLog.args.orderId.toNumber();
-        }
-      } catch {
-        // Skip logs that can't be parsed
-      }
-    }
-
-    throw new Error("Order ID not found in event logs");
-  }
-
-  getOrderBook(depth = 10) {
+  getOrderBook(depth = 20) {
     return this.orderBook.getOrderBook(depth);
   }
 
   getPoolInfo(): PoolInfo {
     return this.orderBook.getPoolInfo();
+  }
+
+  getUserOrders(trader: string): Order[] {
+    return this.orderBook.getUserOrders(trader);
   }
 }

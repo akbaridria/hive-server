@@ -1,14 +1,14 @@
 import config from "./config";
 import HiveFactoryListener from "./services/hive-factory-listener";
 import createServer from "./api/server";
-import { getProvider } from "./utils/ethers";
+import { getProvider, getWsProvider } from "./utils/ethers";
 import logger from "./utils/logger";
 
 async function main() {
   try {
     logger.info("Starting Hive backend service...");
 
-    const provider = getProvider();
+    const provider = getWsProvider();
     const factoryListener = new HiveFactoryListener(
       provider,
       config.factoryAddress,
