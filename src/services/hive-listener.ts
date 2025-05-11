@@ -3,7 +3,7 @@ import OrderBookModel from "../models/order-book";
 import HiveCoreABI from "../../abis/hive-core.json";
 import Erc20ABI from "../../abis/erc20.json";
 import logger from "../utils/logger";
-import { Order, PoolInfo } from "../models/types";
+import { Order, PoolInfo, TokenERC20 } from "../models/types";
 
 interface HiveListenerEvents {
   onOrderBookUpdate: (poolAddress: string) => void;
@@ -13,43 +13,77 @@ export default class HiveListener {
   private contract: ethers.Contract;
   private orderBook: OrderBookModel;
   private events: HiveListenerEvents;
-  private baseTokenDecimals: number;
-  private quoteTokenDecimals: number;
+  private baseTokenMultiplier: number;
+  private quoteTokenMultiplier: number;
 
   constructor(
     provider: ethers.providers.JsonRpcProvider,
     contractAddress: string,
     events: HiveListenerEvents,
-    baseTokenDecimals: number = 18,
-    quoteTokenDecimals: number = 18
+    baseTokenDecimals: number = 1,
+    quoteTokenDecimals: number = 1
   ) {
     this.contract = new ethers.Contract(contractAddress, HiveCoreABI, provider);
     this.events = events;
-    this.orderBook = new OrderBookModel("", "");
-    this.baseTokenDecimals = baseTokenDecimals;
-    this.quoteTokenDecimals = quoteTokenDecimals;
+    const defaultToken = {
+      address: "",
+      name: "",
+      symbol: "",
+      decimals: 18,
+    };
+    this.orderBook = new OrderBookModel(defaultToken, defaultToken, "");
+    this.baseTokenMultiplier = baseTokenDecimals;
+    this.quoteTokenMultiplier = quoteTokenDecimals;
   }
 
   async initialize(): Promise<void> {
     try {
-      const [baseToken, quoteToken, latestPrice] = await Promise.all([
-        this.contract.getBaseToken(),
-        this.contract.getQuoteToken(),
-        this.contract.getLatestPrice(),
-      ]);
+      const [baseTokenAddress, quoteTokenAddress, latestPrice] =
+        await Promise.all([
+          this.contract.getBaseToken(),
+          this.contract.getQuoteToken(),
+          this.contract.getLatestPrice(),
+        ]);
 
       const baseTokenContract = new ethers.Contract(
-        baseToken,
+        baseTokenAddress,
         Erc20ABI,
         this.contract.provider
       );
       const quoteTokenContract = new ethers.Contract(
-        quoteToken,
+        quoteTokenAddress,
         Erc20ABI,
         this.contract.provider
       );
-      this.baseTokenDecimals = await baseTokenContract.decimals();
-      this.quoteTokenDecimals = await quoteTokenContract.decimals();
+
+      const [baseTokenName, baseTokenSymbol, baseTokenDecimals] =
+        await Promise.all([
+          baseTokenContract.name(),
+          baseTokenContract.symbol(),
+          baseTokenContract.decimals(),
+        ]);
+
+      const baseToken: TokenERC20 = {
+        address: baseTokenAddress,
+        name: baseTokenName,
+        symbol: baseTokenSymbol,
+        decimals: baseTokenDecimals,
+      };
+      this.baseTokenMultiplier = 10 ** baseTokenDecimals;
+
+      const [quoteTokenName, quoteTokenSymbol, quoteTokenDecimals] =
+        await Promise.all([
+          quoteTokenContract.name(),
+          quoteTokenContract.symbol(),
+          quoteTokenContract.decimals(),
+        ]);
+      const quoteToken: TokenERC20 = {
+        address: quoteTokenAddress,
+        name: quoteTokenName,
+        symbol: quoteTokenSymbol,
+        decimals: quoteTokenDecimals,
+      };
+      this.quoteTokenMultiplier = 10 ** quoteTokenDecimals;
 
       this.orderBook = new OrderBookModel(
         baseToken,
@@ -57,7 +91,7 @@ export default class HiveListener {
         this.contract.address
       );
       this.orderBook.setLatestPrice(
-        String(Number(latestPrice) / 10 ** this.quoteTokenDecimals)
+        String(Number(latestPrice) / this.quoteTokenMultiplier)
       );
 
       logger.info(`Initialized HiveListener for pool ${this.contract.address}`);
@@ -95,17 +129,13 @@ export default class HiveListener {
         orderType: bigint
       ) => {
         try {
-          logger.info(
-            `OrderCreated event: ${trader}, ${orderId}, ${price}, ${amount}, ${orderType}`
-          );
           this.orderBook.addOrder({
             id: orderId.toString(),
             trader,
-            price: (Number(price) / 10 ** this.quoteTokenDecimals).toString(),
-            amount: (Number(amount) / 10 ** this.baseTokenDecimals).toString(),
+            price: (Number(price) / this.quoteTokenMultiplier).toString(),
+            amount: (Number(amount) / this.baseTokenMultiplier).toString(),
             remainingAmount: (
-              Number(amount) /
-              10 ** this.baseTokenDecimals
+              Number(amount) / this.baseTokenMultiplier
             ).toString(),
             filled: "0",
             orderType: Number(orderType) === 0 ? "BUY" : "SELL",
@@ -137,8 +167,8 @@ export default class HiveListener {
         try {
           this.orderBook.updateOrderFilled(
             orderId.toString(),
-            (Number(filledAmount) / 10 ** this.baseTokenDecimals).toString(),
-            (Number(remainingAmount) / 10 ** this.baseTokenDecimals).toString(),
+            (Number(filledAmount) / this.baseTokenMultiplier).toString(),
+            (Number(remainingAmount) / this.baseTokenMultiplier).toString(),
             trader,
             Number(remainingAmount) > 0
           );
@@ -164,7 +194,7 @@ export default class HiveListener {
         try {
           this.orderBook.updateOrder(
             orderId.toString(),
-            (Number(newAmount) / 10 ** this.baseTokenDecimals).toString(),
+            (Number(newAmount) / this.baseTokenMultiplier).toString(),
             trader
           );
           this.emitUpdate();
@@ -174,16 +204,46 @@ export default class HiveListener {
       }
     );
 
-    this.contract.on("TradeExecuted", (buyer, seller, amount, price) => {
+    this.contract.on("LatestPrice", (price) => {
       try {
         this.orderBook.setLatestPrice(
-          (Number(price) / 10 ** this.quoteTokenDecimals).toString()
+          (Number(price) / this.quoteTokenMultiplier).toString()
         );
         this.emitUpdate();
       } catch (error) {
         logger.error("Error processing TradeExecuted event:", error);
       }
     });
+
+    this.contract.on(
+      "MarketOrderExecuted",
+      (
+        trader: string,
+        amount: bigint,
+        price: bigint,
+        orderType: bigint,
+        filledAmount
+      ) => {
+        try {
+          this.orderBook.addMarketOrder(
+            {
+              amount: (
+                Number(filledAmount) /
+                (Number(orderType) === 0
+                  ? this.baseTokenMultiplier
+                  : this.quoteTokenMultiplier)
+              ).toString(),
+              ordertype: Number(orderType) === 0 ? "BUY" : "SELL",
+              timestamp: Math.floor(Date.now() / 1000),
+            },
+            trader
+          );
+          this.emitUpdate();
+        } catch (error) {
+          logger.error("Error processing TradeExecuted event:", error);
+        }
+      }
+    );
   }
 
   private emitUpdate(): void {

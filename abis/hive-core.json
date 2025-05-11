@@ -474,6 +474,56 @@
     },
     {
         "type": "event",
+        "name": "LatestPrice",
+        "inputs": [
+            {
+                "name": "price",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "MarketOrderExecuted",
+        "inputs": [
+            {
+                "name": "trader",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "price",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "orderType",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "enum OrderType"
+            },
+            {
+                "name": "filledAmount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
         "name": "OrderCancelled",
         "inputs": [
             {
@@ -481,6 +531,12 @@
                 "type": "uint256",
                 "indexed": true,
                 "internalType": "uint256"
+            },
+            {
+                "name": "trader",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
             }
         ],
         "anonymous": false
@@ -576,38 +632,13 @@
                 "internalType": "uint256"
             },
             {
+                "name": "trader",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
                 "name": "newAmount",
-                "type": "uint256",
-                "indexed": false,
-                "internalType": "uint256"
-            }
-        ],
-        "anonymous": false
-    },
-    {
-        "type": "event",
-        "name": "TradeExecuted",
-        "inputs": [
-            {
-                "name": "buyer",
-                "type": "address",
-                "indexed": true,
-                "internalType": "address"
-            },
-            {
-                "name": "seller",
-                "type": "address",
-                "indexed": true,
-                "internalType": "address"
-            },
-            {
-                "name": "tradeAmount",
-                "type": "uint256",
-                "indexed": false,
-                "internalType": "uint256"
-            },
-            {
-                "name": "price",
                 "type": "uint256",
                 "indexed": false,
                 "internalType": "uint256"

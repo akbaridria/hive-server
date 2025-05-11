@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import HiveListener from "./hive-listener";
 import HiveFactoryABI from "../../abis/hive-factory.json";
 import logger from "../utils/logger";
+import { TokenERC20 } from "../models/types";
 
 export default class HiveFactoryListener {
   private provider: ethers.providers.JsonRpcProvider;
@@ -75,8 +76,9 @@ export default class HiveFactoryListener {
 
   getAllPoolInfo(): {
     address: string;
-    baseToken: string;
-    quoteToken: string;
+    baseToken: TokenERC20;
+    quoteToken: TokenERC20;
+    latestPrice: string;
   }[] {
     return Array.from(this.hiveListeners.values()).map((listener) =>
       listener.getPoolInfo()

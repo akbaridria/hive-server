@@ -1,19 +1,20 @@
-import { Order, PriceLevel, OrderBook, PoolInfo, OrderType } from "./types";
+import { Order, PriceLevel, OrderBook, PoolInfo, OrderType, TokenERC20, MarketOrder } from "./types";
 
 export default class OrderBookModel {
-  private baseToken: string;
-  private quoteToken: string;
+  private baseToken: TokenERC20;
+  private quoteToken: TokenERC20;
   private buyOrders: Map<string, string[]> = new Map();
   private sellOrders: Map<string, string[]> = new Map();
   private orderById: Map<string, Order> = new Map();
   private orderByTrader: Map<string, Map<string, Order>> = new Map();
+  private marketOrderByTrader: Map<string, MarketOrder[]> = new Map();
   private latestPrice: string = "0";
   private contractAddress: string = "";
 
   constructor(
-    baseToken: string,
-    quoteToken: string,
-    contractAddress: string = ""
+    baseToken: TokenERC20,
+    quoteToken: TokenERC20,
+    contractAddress: string
   ) {
     this.baseToken = baseToken;
     this.quoteToken = quoteToken;
@@ -101,6 +102,13 @@ export default class OrderBookModel {
     return true;
   }
 
+  addMarketOrder(marketOrder: MarketOrder, trader: string): void {
+    if (!this.marketOrderByTrader.has(trader)) {
+      this.marketOrderByTrader.set(trader, []);
+    }
+    this.marketOrderByTrader.get(trader)?.push(marketOrder);
+  }
+
   getBuyLevels(limit = 100): PriceLevel[] {
     return Array.from(this.buyOrders.entries())
       .sort(([a], [b]) => parseFloat(b) - parseFloat(a))
@@ -171,7 +179,7 @@ export default class OrderBookModel {
 
   getPoolInfo(): PoolInfo {
     return {
-      address: this.contractAddress, // Will be set by the listener
+      address: this.contractAddress,
       baseToken: this.baseToken,
       quoteToken: this.quoteToken,
       latestPrice: this.latestPrice,

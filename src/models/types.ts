@@ -12,6 +12,12 @@ export interface Order {
   timestamp: number;
 }
 
+export interface MarketOrder {
+  timestamp: number;
+  amount: string;
+  ordertype: OrderType;
+}
+
 export interface PriceLevel {
   price: string;
   orders: Order[];
@@ -19,8 +25,8 @@ export interface PriceLevel {
 }
 
 export interface OrderBook {
-  baseToken: string;
-  quoteToken: string;
+  baseToken: TokenERC20;
+  quoteToken: TokenERC20;
   latestPrice: string;
   bids: PriceLevel[];
   asks: PriceLevel[];
@@ -28,7 +34,14 @@ export interface OrderBook {
 
 export interface PoolInfo {
   address: string;
-  baseToken: string;
-  quoteToken: string;
+  baseToken: TokenERC20;
+  quoteToken: TokenERC20;
   latestPrice: string;
+}
+
+export interface TokenERC20 {
+  name: string;
+  symbol: string;
+  decimals: number;
+  address: string;
 }
