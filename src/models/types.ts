@@ -45,3 +45,10 @@ export interface TokenERC20 {
   decimals: number;
   address: string;
 }
+
+export interface AmountOutResult {
+  isError: boolean;
+  errorMessage?: string;
+  outputAmount: string;
+  prices: string[];
+}

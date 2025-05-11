@@ -3,7 +3,14 @@ import OrderBookModel from "../models/order-book";
 import HiveCoreABI from "../../abis/hive-core.json";
 import Erc20ABI from "../../abis/erc20.json";
 import logger from "../utils/logger";
-import { Order, PoolInfo, TokenERC20 } from "../models/types";
+import {
+  AmountOutResult,
+  MarketOrder,
+  Order,
+  OrderType,
+  PoolInfo,
+  TokenERC20,
+} from "../models/types";
 
 interface HiveListenerEvents {
   onOrderBookUpdate: (poolAddress: string) => void;
@@ -260,5 +267,13 @@ export default class HiveListener {
 
   getUserOrders(trader: string): Order[] {
     return this.orderBook.getUserOrders(trader);
+  }
+
+  getUserMarketOrders(trader: string): MarketOrder[] {
+    return this.orderBook.getMarketOrders(trader);
+  }
+
+  getAmountOut(orderType: OrderType, amount: string): AmountOutResult {
+    return this.orderBook.getAmountOut(orderType, amount);
   }
 }

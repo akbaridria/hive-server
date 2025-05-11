@@ -1,4 +1,13 @@
-import { Order, PriceLevel, OrderBook, PoolInfo, OrderType, TokenERC20, MarketOrder } from "./types";
+import {
+  Order,
+  PriceLevel,
+  OrderBook,
+  PoolInfo,
+  OrderType,
+  TokenERC20,
+  MarketOrder,
+  AmountOutResult,
+} from "./types";
 
 export default class OrderBookModel {
   private baseToken: TokenERC20;
@@ -61,7 +70,13 @@ export default class OrderBookModel {
     }
   }
 
-  updateOrderFilled(id: string, filled: string, remainingAmount: string, trader: string, isActive: boolean): boolean {
+  updateOrderFilled(
+    id: string,
+    filled: string,
+    remainingAmount: string,
+    trader: string,
+    isActive: boolean
+  ): boolean {
     const order = this.orderById.get(id);
     if (!order) return false;
 
@@ -109,6 +124,10 @@ export default class OrderBookModel {
     this.marketOrderByTrader.get(trader)?.push(marketOrder);
   }
 
+  getMarketOrders(trader: string): MarketOrder[] {
+    return this.marketOrderByTrader.get(trader) || [];
+  }
+
   getBuyLevels(limit = 100): PriceLevel[] {
     return Array.from(this.buyOrders.entries())
       .sort(([a], [b]) => parseFloat(b) - parseFloat(a))
@@ -151,6 +170,74 @@ export default class OrderBookModel {
             .toString(),
         };
       });
+  }
+
+  getAmountOut(orderType: OrderType, amount: string): AmountOutResult {
+    try {
+      const isBuy = orderType === "BUY";
+      const priceLevels = isBuy ? this.getSellLevels() : this.getBuyLevels();
+
+      if (priceLevels.length === 0) {
+        return {
+          isError: true,
+          errorMessage: "No liquidity available",
+          outputAmount: "0",
+          prices: [],
+        };
+      }
+
+      let remainingAmount = parseFloat(amount);
+      let totalOutput = 0;
+      const hitPrices: string[] = [];
+
+      for (const level of priceLevels) {
+        if (remainingAmount <= 0) break;
+
+        const levelPrice = parseFloat(level.price);
+        const levelVolume = parseFloat(level.totalVolume);
+
+        if (isBuy) {
+          const quoteSpendAtLevel = Math.min(
+            remainingAmount,
+            levelVolume * levelPrice
+          );
+          const baseReceived = quoteSpendAtLevel / levelPrice;
+          totalOutput += baseReceived;
+          remainingAmount -= quoteSpendAtLevel;
+        } else {
+          const baseSellAtLevel = Math.min(remainingAmount, levelVolume);
+          const quoteReceived = baseSellAtLevel * levelPrice;
+          totalOutput += quoteReceived;
+          remainingAmount -= baseSellAtLevel;
+        }
+
+        hitPrices.push(level.price);
+      }
+
+      if (remainingAmount > 0) {
+        return {
+          isError: true,
+          errorMessage: `Insufficient liquidity (unfilled amount: ${remainingAmount})`,
+          outputAmount: totalOutput.toString(),
+          prices: hitPrices,
+        };
+      }
+
+      return {
+        isError: false,
+        outputAmount: totalOutput.toString(),
+        prices: hitPrices,
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        errorMessage: `Calculation error: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        outputAmount: "0",
+        prices: [],
+      };
+    }
   }
 
   getOrderBook(depth = 20): OrderBook {
