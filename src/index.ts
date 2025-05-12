@@ -1,18 +1,20 @@
 import config from "./config";
 import HiveFactoryListener from "./services/hive-factory-listener";
 import createServer from "./api/server";
-import { getProvider, getWsProvider } from "./utils/ethers";
+import { getWsProvider } from "./utils/ethers";
 import logger from "./utils/logger";
+import Redis from "ioredis";
 
 async function main() {
   try {
     logger.info("Starting Hive backend service...");
-
+    const redis = new Redis(config.redisUrl!);
     const provider = getWsProvider();
     const factoryListener = new HiveFactoryListener(
       provider,
       config.factoryAddress,
-      (poolAddress: string) => {} // Will be set by the server
+      (poolAddress: string) => {},
+      redis
     );
 
     await factoryListener.start();

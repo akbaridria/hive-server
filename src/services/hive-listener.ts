@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import OrderBookModel from "../models/order-book";
-import HiveCoreABI from "../../abis/hive-core.json";
-import Erc20ABI from "../../abis/erc20.json";
+import HiveCoreABI from "../abis/hive-core.json";
+import Erc20ABI from "../abis/erc20.json";
 import logger from "../utils/logger";
 import {
   AmountOutResult,
@@ -11,6 +11,7 @@ import {
   PoolInfo,
   TokenERC20,
 } from "../models/types";
+import Redis from "ioredis";
 
 interface HiveListenerEvents {
   onOrderBookUpdate: (poolAddress: string) => void;
@@ -20,15 +21,15 @@ export default class HiveListener {
   private contract: ethers.Contract;
   private orderBook: OrderBookModel;
   private events: HiveListenerEvents;
-  private baseTokenMultiplier: number;
-  private quoteTokenMultiplier: number;
+  private baseTokenMultiplier: number = 1;
+  private quoteTokenMultiplier: number = 1;
+  private redisClient: Redis;
 
   constructor(
     provider: ethers.providers.JsonRpcProvider,
     contractAddress: string,
     events: HiveListenerEvents,
-    baseTokenDecimals: number = 1,
-    quoteTokenDecimals: number = 1
+    redis: Redis
   ) {
     this.contract = new ethers.Contract(contractAddress, HiveCoreABI, provider);
     this.events = events;
@@ -38,9 +39,8 @@ export default class HiveListener {
       symbol: "",
       decimals: 18,
     };
-    this.orderBook = new OrderBookModel(defaultToken, defaultToken, "");
-    this.baseTokenMultiplier = baseTokenDecimals;
-    this.quoteTokenMultiplier = quoteTokenDecimals;
+    this.orderBook = new OrderBookModel(defaultToken, defaultToken, "", redis);
+    this.redisClient = redis;
   }
 
   async initialize(): Promise<void> {
@@ -95,7 +95,8 @@ export default class HiveListener {
       this.orderBook = new OrderBookModel(
         baseToken,
         quoteToken,
-        this.contract.address
+        this.contract.address,
+        this.redisClient
       );
       this.orderBook.setLatestPrice(
         String(Number(latestPrice) / this.quoteTokenMultiplier)
@@ -261,19 +262,22 @@ export default class HiveListener {
     return this.orderBook.getOrderBook(depth);
   }
 
-  getPoolInfo(): PoolInfo {
-    return this.orderBook.getPoolInfo();
+  async getPoolInfo(): Promise<PoolInfo> {
+    return await this.orderBook.getPoolInfo();
   }
 
-  getUserOrders(trader: string): Order[] {
-    return this.orderBook.getUserOrders(trader);
+  async getUserOrders(trader: string): Promise<Order[]> {
+    return await this.orderBook.getUserOrders(trader);
   }
 
-  getUserMarketOrders(trader: string): MarketOrder[] {
+  async getUserMarketOrders(trader: string): Promise<MarketOrder[]> {
     return this.orderBook.getMarketOrders(trader);
   }
 
-  getAmountOut(orderType: OrderType, amount: string): AmountOutResult {
+  async getAmountOut(
+    orderType: OrderType,
+    amount: string
+  ): Promise<AmountOutResult> {
     return this.orderBook.getAmountOut(orderType, amount);
   }
 }

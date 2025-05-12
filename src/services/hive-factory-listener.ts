@@ -1,19 +1,22 @@
 import { ethers } from "ethers";
+import Redis from "ioredis";
 import HiveListener from "./hive-listener";
-import HiveFactoryABI from "../../abis/hive-factory.json";
+import HiveFactoryABI from "../abis/hive-factory.json";
 import logger from "../utils/logger";
-import { TokenERC20 } from "../models/types";
+import { TokenERC20, PoolInfo } from "../models/types";
 
 export default class HiveFactoryListener {
   private provider: ethers.providers.JsonRpcProvider;
   private factoryContract: ethers.Contract;
   private hiveListeners: Map<string, HiveListener> = new Map();
   private onPoolCreated: (poolAddress: string) => void;
+  private redisClient: Redis;
 
   constructor(
     provider: ethers.providers.JsonRpcProvider,
     factoryAddress: string,
-    onPoolCreated: (poolAddress: string) => void
+    onPoolCreated: (poolAddress: string) => void,
+    redis: Redis
   ) {
     this.provider = provider;
     this.factoryContract = new ethers.Contract(
@@ -22,6 +25,7 @@ export default class HiveFactoryListener {
       provider
     );
     this.onPoolCreated = onPoolCreated;
+    this.redisClient = redis;
   }
 
   async start(): Promise<void> {
@@ -60,28 +64,45 @@ export default class HiveFactoryListener {
 
   private async addHiveListener(poolAddress: string): Promise<void> {
     if (!this.hiveListeners.has(poolAddress)) {
-      const listener = new HiveListener(this.provider, poolAddress, {
-        onOrderBookUpdate: () => this.onPoolCreated(poolAddress),
-      });
+      const listener = new HiveListener(
+        this.provider,
+        poolAddress,
+        {
+          onOrderBookUpdate: () => this.onPoolCreated(poolAddress),
+        },
+        this.redisClient
+      );
 
       await listener.start();
       this.hiveListeners.set(poolAddress, listener);
+
+      // Save pool info to Redis
+      const poolInfo = listener.getPoolInfo();
+      await this.redisClient.set(
+        `pool:${poolAddress}`,
+        JSON.stringify(poolInfo)
+      );
+
       logger.info(`Added listener for pool ${poolAddress}`);
     }
   }
 
-  getPoolListener(poolAddress: string): HiveListener | undefined {
-    return this.hiveListeners.get(poolAddress);
+  async getPoolInfoFromRedis(poolAddress: string): Promise<PoolInfo | null> {
+    const poolData = await this.redisClient.get(`pool:${poolAddress}`);
+    return poolData ? JSON.parse(poolData) : null;
   }
 
-  getAllPoolInfo(): {
-    address: string;
-    baseToken: TokenERC20;
-    quoteToken: TokenERC20;
-    latestPrice: string;
-  }[] {
-    return Array.from(this.hiveListeners.values()).map((listener) =>
-      listener.getPoolInfo()
+  async getAllPools(): Promise<PoolInfo[]> {
+    const keys = await this.redisClient.keys("pool:*");
+    const poolData = await Promise.all(
+      keys.map((key) => this.redisClient.get(key))
     );
+    return poolData
+      .filter((data): data is string => data !== null)
+      .map((data) => JSON.parse(data));
+  }
+
+  getPoolListener(poolAddress: string): HiveListener | undefined {
+    return this.hiveListeners.get(poolAddress);
   }
 }

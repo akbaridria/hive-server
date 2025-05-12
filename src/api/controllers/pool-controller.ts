@@ -5,7 +5,7 @@ export default class PoolController {
 
   getAllPools = (req: Request, res: Response) => {
     try {
-      const pools = this.factoryListener.getAllPoolInfo();
+      const pools = this.factoryListener.getAllPools();
       res.json(pools);
     } catch (error) {
       res.status(500).json({ error: "Internal server error" });
