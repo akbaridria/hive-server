@@ -258,8 +258,16 @@ export default class HiveListener {
     this.events.onOrderBookUpdate(this.contract.address);
   }
 
-  getOrderBook(depth = 20) {
-    return this.orderBook.getOrderBook(depth);
+  async getOrderBook(depth = 20) {
+    return await this.orderBook.getOrderBook(depth);
+  }
+
+  async getOrder(orderId: string): Promise<Order | undefined> {
+    return await this.orderBook.getOrder(orderId);
+  }
+
+  async getOrderByTrader(trader: string): Promise<Order[] | undefined> {
+    return await this.orderBook.getUserOrders(trader);
   }
 
   async getPoolInfo(): Promise<PoolInfo> {
@@ -271,13 +279,13 @@ export default class HiveListener {
   }
 
   async getUserMarketOrders(trader: string): Promise<MarketOrder[]> {
-    return this.orderBook.getMarketOrders(trader);
+    return await this.orderBook.getMarketOrders(trader);
   }
 
   async getAmountOut(
     orderType: OrderType,
     amount: string
   ): Promise<AmountOutResult> {
-    return this.orderBook.getAmountOut(orderType, amount);
+    return await this.orderBook.getAmountOut(orderType, amount);
   }
 }

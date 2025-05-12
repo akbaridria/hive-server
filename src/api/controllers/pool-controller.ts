@@ -3,16 +3,16 @@ import { Request, Response } from "express";
 export default class PoolController {
   constructor(private factoryListener: any) {}
 
-  getAllPools = (req: Request, res: Response) => {
+  getAllPools = async (req: Request, res: Response) => {
     try {
-      const pools = this.factoryListener.getAllPools();
+      const pools = await this.factoryListener.getAllPools();
       res.json(pools);
     } catch (error) {
       res.status(500).json({ error: "Internal server error" });
     }
   };
 
-  getPoolInfo = (req: Request, res: Response) => {
+  getPoolInfo = async (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;
       const listener = this.factoryListener.getPoolListener(poolAddress);
@@ -20,7 +20,7 @@ export default class PoolController {
         return res.status(404).json({ error: "Pool not found" });
       }
 
-      res.json(listener.getPoolInfo());
+      res.json(await listener.getPoolInfo());
     } catch (error) {
       res.status(500).json({ error: "Internal server error" });
     }

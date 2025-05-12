@@ -23,7 +23,7 @@ export default class OrderBookController {
     }
   };
 
-  getMarketOrders = (req: Request, res: Response) => {
+  getMarketOrders = async (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;
       const trader = req.params.trader;
@@ -31,7 +31,7 @@ export default class OrderBookController {
       if (!listener) {
         return res.status(404).json({ error: "Pool not found" });
       }
-      const orders = listener.getMarketOrders(trader);
+      const orders = await listener.getUserMarketOrders(trader);
       if (!orders) {
         return res.status(404).json({ error: "No market orders found" });
       }
@@ -41,15 +41,15 @@ export default class OrderBookController {
     }
   };
 
-  getUserOrders = (req: Request, res: Response) => {
+  getUserOrders = async (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;
       const traderAddress = req.params.trader;
-      const listener = this.factoryListener.getTraderListener(poolAddress);
+      const listener = this.factoryListener.getPoolListener(poolAddress);
       if (!listener) {
         return res.status(404).json({ error: "Trader not found" });
       }
-      const orders = listener.getOrders(traderAddress);
+      const orders = await listener.getOrderByTrader(traderAddress);
       if (!orders) {
         return res.status(404).json({ error: "No orders found" });
       }
@@ -59,7 +59,7 @@ export default class OrderBookController {
     }
   };
 
-  getOrderBook = (req: Request, res: Response) => {
+  getOrderBook = async (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;
       const depth = parseInt(req.query.depth as string) || 10;
@@ -69,13 +69,13 @@ export default class OrderBookController {
         return res.status(404).json({ error: "Pool not found" });
       }
 
-      res.json(listener.getOrderBook(depth));
+      res.json(await listener.getOrderBook(depth));
     } catch (error) {
       res.status(500).json({ error: "Internal server error" });
     }
   };
 
-  getOrder = (req: Request, res: Response) => {
+  getOrder = async (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;
       const orderId = req.params.id;
@@ -85,7 +85,7 @@ export default class OrderBookController {
         return res.status(404).json({ error: "Pool not found" });
       }
 
-      const order = listener.getOrder(orderId);
+      const order = await listener.getOrder(orderId);
       if (!order) {
         return res.status(404).json({ error: "Order not found" });
       }

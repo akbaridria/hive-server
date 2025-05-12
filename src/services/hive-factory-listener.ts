@@ -77,7 +77,7 @@ export default class HiveFactoryListener {
       this.hiveListeners.set(poolAddress, listener);
 
       // Save pool info to Redis
-      const poolInfo = listener.getPoolInfo();
+      const poolInfo = await listener.getPoolInfo();
       await this.redisClient.set(
         `pool:${poolAddress}`,
         JSON.stringify(poolInfo)
