@@ -8,7 +8,12 @@ import Redis from "ioredis";
 async function main() {
   try {
     logger.info("Starting Hive backend service...");
-    const redis = new Redis(config.redisUrl!);
+    const redis = new Redis(config.redisUrl!, {
+      tls: {
+        // temporaryly disable TLS verification for local development
+        rejectUnauthorized: false,
+      },
+    });
     const provider = getWsProvider();
     const factoryListener = new HiveFactoryListener(
       provider,

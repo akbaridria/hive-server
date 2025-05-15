@@ -55,11 +55,21 @@ export default class HiveFactoryListener {
   }
 
   private setupListeners(): void {
-    this.factoryContract.on("HiveCoreCreated", (poolAddress: string) => {
+    const listener = (poolAddress: string) => {
       this.addHiveListener(poolAddress)
         .then(() => this.onPoolCreated(poolAddress))
         .catch((error) => logger.error("Error adding new pool:", error));
-    });
+    };
+    this.factoryContract.on("HiveCoreCreated", listener);
+
+    const healthCheck = setInterval(() => {
+      this.provider.getBlockNumber().catch((error) => {
+        console.error("Connection error:", error);
+        this.factoryContract.removeListener("YourEvent", listener);
+        clearInterval(healthCheck);
+        setTimeout(this.setupListeners, 5000);
+      });
+    }, 10000);
   }
 
   private async addHiveListener(poolAddress: string): Promise<void> {

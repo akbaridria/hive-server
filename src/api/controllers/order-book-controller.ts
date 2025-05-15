@@ -3,7 +3,7 @@ import { Request, Response } from "express";
 export default class OrderBookController {
   constructor(private factoryListener: any) {}
 
-  getAmountOut = (req: Request, res: Response) => {
+  getAmountOut = async (req: Request, res: Response) => {
     try {
       const poolAddress = req.params.address;
       const listener = this.factoryListener.getPoolListener(poolAddress);
@@ -13,7 +13,7 @@ export default class OrderBookController {
 
       const orderType = req.query.orderType as string;
       const amount = req.query.amount as string;
-      const result = listener.getAmountOut(orderType, amount);
+      const result = await listener.getAmountOut(orderType, amount);
       if (result === undefined) {
         return res.status(404).json({ error: "Amount out not found" });
       }
@@ -49,7 +49,7 @@ export default class OrderBookController {
       if (!listener) {
         return res.status(404).json({ error: "Trader not found" });
       }
-      const orders = await listener.getOrderByTrader(traderAddress);
+      const orders = await listener.getUserOrders(traderAddress);
       if (!orders) {
         return res.status(404).json({ error: "No orders found" });
       }
