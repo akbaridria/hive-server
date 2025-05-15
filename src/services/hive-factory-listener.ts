@@ -67,7 +67,7 @@ export default class HiveFactoryListener {
         console.error("Connection error:", error);
         this.factoryContract.removeListener("YourEvent", listener);
         clearInterval(healthCheck);
-        setTimeout(this.setupListeners, 5000);
+        setTimeout(this.setupListeners, 500);
       });
     }, 10000);
   }
