@@ -52,3 +52,7 @@ export interface AmountOutResult {
   outputAmount: string;
   prices: string[];
 }
+
+export interface BlockProcessor {
+  processBlock(blockNumber: number): Promise<void>;
+}

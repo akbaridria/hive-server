@@ -1,22 +1,26 @@
 import { ethers } from "ethers";
 import Redis from "ioredis";
 import HiveListener from "./hive-listener";
+import BlockEventManager from "./block-event-manager";
 import HiveFactoryABI from "../abis/hive-factory.json";
 import logger from "../utils/logger";
-import { TokenERC20, PoolInfo } from "../models/types";
+import { TokenERC20, PoolInfo, BlockProcessor } from "../models/types";
 
-export default class HiveFactoryListener {
+export default class HiveFactoryListener implements BlockProcessor {
   private provider: ethers.providers.JsonRpcProvider;
   private factoryContract: ethers.Contract;
   private hiveListeners: Map<string, HiveListener> = new Map();
   private onPoolCreated: (poolAddress: string) => void;
   private redisClient: Redis;
+  private lastProcessedBlock: number = 0;
+  private blockEventManager: BlockEventManager;
 
   constructor(
     provider: ethers.providers.JsonRpcProvider,
     factoryAddress: string,
     onPoolCreated: (poolAddress: string) => void,
-    redis: Redis
+    redis: Redis,
+    blockEventManager: BlockEventManager
   ) {
     this.provider = provider;
     this.factoryContract = new ethers.Contract(
@@ -26,12 +30,18 @@ export default class HiveFactoryListener {
     );
     this.onPoolCreated = onPoolCreated;
     this.redisClient = redis;
+    this.blockEventManager = blockEventManager;
   }
 
   async start(): Promise<void> {
     try {
+      const currentBlock = await this.provider.getBlockNumber();
+      this.lastProcessedBlock = currentBlock;
+      
+      // Register with the block event manager
+      this.blockEventManager.registerProcessor("factory", this);
+      
       await this.syncExistingPools();
-      this.setupListeners();
       logger.info("HiveFactoryListener started");
     } catch (error) {
       logger.error("Failed to start HiveFactoryListener:", error);
@@ -54,22 +64,32 @@ export default class HiveFactoryListener {
     }
   }
 
-  private setupListeners(): void {
-    const listener = (poolAddress: string) => {
-      this.addHiveListener(poolAddress)
-        .then(() => this.onPoolCreated(poolAddress))
-        .catch((error) => logger.error("Error adding new pool:", error));
-    };
-    this.factoryContract.on("HiveCoreCreated", listener);
-
-    const healthCheck = setInterval(() => {
-      this.provider.getBlockNumber().catch((error) => {
-        console.error("Connection error:", error);
-        this.factoryContract.removeListener("YourEvent", listener);
-        clearInterval(healthCheck);
-        setTimeout(this.setupListeners, 500);
-      });
-    }, 10000);
+  // Implementation of BlockProcessor interface
+  async processBlock(blockNumber: number): Promise<void> {
+    // Skip if this block has already been processed
+    if (blockNumber <= this.lastProcessedBlock) return;
+    
+    try {
+      // Look for events from the last processed block+1 to the current block
+      const fromBlock = this.lastProcessedBlock + 1;
+      
+      // Query for HiveCoreCreated events
+      const filter = this.factoryContract.filters.HiveCoreCreated();
+      const events = await this.factoryContract.queryFilter(filter, fromBlock, blockNumber);
+      
+      // Process each HiveCoreCreated event
+      for (const event of events) {
+        const { hiveCoreAddress } = event.args as any;
+        await this.addHiveListener(hiveCoreAddress);
+        this.onPoolCreated(hiveCoreAddress);
+      }
+      
+      // Update the last processed block
+      this.lastProcessedBlock = blockNumber;
+      
+    } catch (error) {
+      logger.error(`Error processing block ${blockNumber} for HiveFactoryListener:`, error);
+    }
   }
 
   private async addHiveListener(poolAddress: string): Promise<void> {
@@ -80,7 +100,8 @@ export default class HiveFactoryListener {
         {
           onOrderBookUpdate: () => this.onPoolCreated(poolAddress),
         },
-        this.redisClient
+        this.redisClient,
+        this.blockEventManager  // Pass the block event manager to the HiveListener
       );
 
       await listener.start();

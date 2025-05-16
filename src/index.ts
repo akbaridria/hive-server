@@ -1,5 +1,6 @@
 import config from "./config";
 import HiveFactoryListener from "./services/hive-factory-listener";
+import BlockEventManager from "./services/block-event-manager";
 import createServer from "./api/server";
 import { getWsProvider } from "./utils/ethers";
 import logger from "./utils/logger";
@@ -10,16 +11,22 @@ async function main() {
     logger.info("Starting Hive backend service...");
     const redis = new Redis(config.redisUrl!, {
       tls: {
-        // temporaryly disable TLS verification for local development
+        // temporarily disable TLS verification for local development
         rejectUnauthorized: false,
       },
     });
     const provider = getWsProvider();
+    
+    // Create the centralized block event manager
+    const blockEventManager = new BlockEventManager(provider);
+    await blockEventManager.start();
+    
     const factoryListener = new HiveFactoryListener(
       provider,
       config.factoryAddress,
       (poolAddress: string) => {},
-      redis
+      redis,
+      blockEventManager
     );
 
     await factoryListener.start();

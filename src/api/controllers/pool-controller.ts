@@ -6,7 +6,8 @@ export default class PoolController {
   getAllPools = async (req: Request, res: Response) => {
     try {
       const pools = await this.factoryListener.getAllPools();
-      res.json(pools);
+
+      res.json(pools.filter((pool: any) => !!pool.address && !!pool.baseToken));
     } catch (error) {
       res.status(500).json({ error: "Internal server error" });
     }
